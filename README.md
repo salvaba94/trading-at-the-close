@@ -1,2 +1,2 @@
-# trading-at-the-close
-Repository for Optiver trading at the close Kaggle competition
+# Trading at the Close
+Repository for Optiver trading at the close Kaggle competition 2023.
