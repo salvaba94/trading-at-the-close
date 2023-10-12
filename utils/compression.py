@@ -1,5 +1,10 @@
 import pandas as pd
-from loguru import logger
+
+try:
+    from loguru import logger
+except:
+    import logging
+    logger = logging.getLogger("__main__")
 
 
 #==============================================================================

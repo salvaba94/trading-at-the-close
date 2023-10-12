@@ -56,13 +56,17 @@ def save_model(
 #==============================================================================
 
 def load_model(
-        model, 
         file: Path
     ) -> Any:
     """Reads a model from a pickle file"""
 
     with open(file.with_suffix(".pkl"), "rb") as f:
         model = pickle.load(f)
+
+    try:
+        model.booster_.load_model(str(file.with_suffix(".txt"))) # type lgb.basic.Booster
+    except:
+        pass
 
     return model
 

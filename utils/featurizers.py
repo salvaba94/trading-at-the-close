@@ -1,11 +1,14 @@
 
 import numpy as np
-import csv
 import pandas as pd
 from itertools import combinations
-from pathlib import Path
 from typing import List
-from loguru import logger
+
+try:
+    from loguru import logger
+except:
+    import logging
+    logger = logging.getLogger("__main__")
 
 from .compression import downcast
 
