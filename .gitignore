@@ -162,3 +162,5 @@ cython_debug/
 /example_test_files
 
 /train_files
+
+/job_artifacts
