@@ -13,7 +13,7 @@ from .files import save_model
 
 
 
-def cross_validate(model, x, y, cv=TimeSeriesSplit(), scorer=mean_absolute_error, groups=None, callbacks=None, job_path=None):
+def cross_validate(model, x, y, cv=TimeSeriesSplit(), scorer=mean_absolute_error, categorical_features="auto", groups=None, callbacks=None, job_path=None):
     scores = np.zeros(cv.n_splits)
     
     models = []
@@ -25,7 +25,7 @@ def cross_validate(model, x, y, cv=TimeSeriesSplit(), scorer=mean_absolute_error
         y_train, y_val = y.iloc[train_index], y.iloc[val_index]
 
         start = timer()
-        model.fit(x_train, y_train, eval_set=[(x_val, y_val)], callbacks=callbacks)
+        model.fit(x_train, y_train, eval_set=[(x_val, y_val)], categorical_features, callbacks=callbacks)
         end = timer()
         
         models.append(model)

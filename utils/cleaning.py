@@ -11,7 +11,7 @@ except:
 
 
 def clean(df: pd.DataFrame) -> None:
-    '''This function cleans the dataset row-wise. Works fully in memory'''
+    """This function cleans the dataset row-wise. Works fully in memory"""
 
     logger.info("Cleaning dataset...")
 
