@@ -32,7 +32,7 @@ def make_features(df: pd.DataFrame, aggregations: Mapping[str, Any], reduce_memo
     df["ask_volume"] = df.eval("ask_size * ask_price")
     df["bid_volume"] = df.eval("bid_size * bid_price")
     df["spread_volume"] =  df.eval("ask_volume - bid_volume")
-    df["total_volume"] = df.eval("ask_volume + bid_volume")
+    #df["total_volume"] = df.eval("ask_volume + bid_volume")
 
     # Size features
     df["size_total"] = df["ask_size"] + df["bid_size"] 
@@ -43,6 +43,9 @@ def make_features(df: pd.DataFrame, aggregations: Mapping[str, Any], reduce_memo
     df["imb_ratio"] = df["imbalance_size"] / df["matched_size"]
     df["imb_s1"] = df.eval("(bid_size - ask_size)/(bid_size + ask_size)")
     df["imb_s2"] = df.eval("(imbalance_size - matched_size)/(matched_size + imbalance_size)")
+
+    # Add 1 so as not to have negative values
+    #df["imbalance_buy_sell_flag"] += 1
 
     # Perform aggregations and features dependent on these
     if aggregations is not None:
@@ -59,7 +62,10 @@ def make_features(df: pd.DataFrame, aggregations: Mapping[str, Any], reduce_memo
     # Combinations of price variables
     prices = ["reference_price", "far_price", "near_price", "ask_price", "bid_price", "wap"]
 
+    df["mid_price"] = (df["ask_price"] + df["bid_price"])/ 2.
+
     """
+    rolling_features = True
     if rolling_features:
         for price in prices:
             df[f"log_return_{price}"] = df.groupby(["time_id"])[price].apply(log_return).reset_index()[price]
@@ -67,10 +73,10 @@ def make_features(df: pd.DataFrame, aggregations: Mapping[str, Any], reduce_memo
 
     # Price features
     for c in combinations(prices, 2):
-        df[f"{c[0]}_plus_{c[1]}"] = (df[f"{c[0]}"] + df[f"{c[1]}"])
+        #df[f"{c[0]}_plus_{c[1]}"] = (df[f"{c[0]}"] + df[f"{c[1]}"])
         df[f"{c[0]}_minus_{c[1]}"] = (df[f"{c[0]}"] - df[f"{c[1]}"])
-        df[f"{c[0]}_times_{c[1]}"] = (df[f"{c[0]}"] * df[f"{c[1]}"])
-        df[f"{c[0]}_over_{c[1]}"] = (df[f"{c[0]}"] / df[f"{c[1]}"])
+        #df[f"{c[0]}_times_{c[1]}"] = (df[f"{c[0]}"] * df[f"{c[1]}"])
+        #df[f"{c[0]}_over_{c[1]}"] = (df[f"{c[0]}"] / df[f"{c[1]}"])
         df[f"{c[0]}_{c[1]}_imb1"] = df.eval(f"({c[0]}-{c[1]})/({c[0]}+{c[1]})")
 
     for c in combinations(prices, 3):

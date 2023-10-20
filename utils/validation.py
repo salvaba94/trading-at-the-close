@@ -13,7 +13,40 @@ from .files import save_model
 
 
 
-def cross_validate(model, x, y, cv=TimeSeriesSplit(), scorer=mean_absolute_error, categorical_features="auto", groups=None, callbacks=None, job_path=None):
+class TrainTestSplit(object):
+
+    def __init__(
+        self,
+        test_size: float,
+        *args,
+        **kwargs
+    ):
+
+        self._test_size = test_size
+        self.n_splits = 1
+
+
+    def split(
+        self,
+        data, 
+        *args, 
+        **kwargs
+    ):
+
+        n_samples = data.shape[0]
+        n_train = n_samples - int(self._test_size * n_samples)
+        n_test = n_samples - n_train
+
+        train = np.arange(n_train)
+        test = np.arange(n_train, n_train + n_test)
+    
+        yield train, test 
+
+
+
+
+def cross_validate(model, x, y, cv=TimeSeriesSplit(), scorer=mean_absolute_error, categorical_feature="auto", groups=None, callbacks=None, job_path=None):
+
     scores = np.zeros(cv.n_splits)
     
     models = []
@@ -25,7 +58,7 @@ def cross_validate(model, x, y, cv=TimeSeriesSplit(), scorer=mean_absolute_error
         y_train, y_val = y.iloc[train_index], y.iloc[val_index]
 
         start = timer()
-        model.fit(x_train, y_train, eval_set=[(x_val, y_val)], categorical_features, callbacks=callbacks)
+        model.fit(x_train, y_train, eval_set=[(x_val, y_val)], categorical_feature=categorical_feature, callbacks=callbacks)
         end = timer()
         
         models.append(model)

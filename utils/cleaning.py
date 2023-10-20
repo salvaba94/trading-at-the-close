@@ -16,3 +16,5 @@ def clean(df: pd.DataFrame) -> None:
     logger.info("Cleaning dataset...")
 
     df.dropna(subset="target", inplace=True)
+    #df.replace([np.inf, -np.inf], np.nan, inplace=True)
+    #df.fillna(method="ffill").fillna(0)
