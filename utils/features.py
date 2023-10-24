@@ -14,16 +14,12 @@ except:
 from .compression import downcast
 
 
-# Realized return
-def realized_return(wap):
-    return np.sqrt(((np.log(wap).diff())**2).sum())
-
 # Log return
 def log_return(series):
     return np.log(series).diff()
 
 
-def make_features(df: pd.DataFrame, aggregations: Mapping[str, Any], reduce_memory: bool = True, ) -> None:
+def make_features(df: pd.DataFrame, reduce_memory: bool = True) -> None:
     """This function creates new features for analysis. Works fully in memory"""
 
     logger.info("Creating additional features...")
@@ -32,10 +28,10 @@ def make_features(df: pd.DataFrame, aggregations: Mapping[str, Any], reduce_memo
     df["ask_volume"] = df.eval("ask_size * ask_price")
     df["bid_volume"] = df.eval("bid_size * bid_price")
     df["spread_volume"] =  df.eval("ask_volume - bid_volume")
-    #df["total_volume"] = df.eval("ask_volume + bid_volume")
+    df["total_volume"] = df.eval("ask_volume + bid_volume")
 
     # Size features
-    df["size_total"] = df["ask_size"] + df["bid_size"] 
+    df["total_size"] = df["ask_size"] + df["bid_size"] 
     df["spread_size"] = df["ask_size"] - df["bid_size"] 
     df["ratio_size"] = df["bid_size"].div(df["ask_size"])
 
@@ -44,33 +40,33 @@ def make_features(df: pd.DataFrame, aggregations: Mapping[str, Any], reduce_memo
     df["imb_s1"] = df.eval("(bid_size - ask_size)/(bid_size + ask_size)")
     df["imb_s2"] = df.eval("(imbalance_size - matched_size)/(matched_size + imbalance_size)")
 
-    # Add 1 so as not to have negative values
-    #df["imbalance_buy_sell_flag"] += 1
-
-    # Perform aggregations and features dependent on these
-    if aggregations is not None:
-        for key, value in aggregations.items():
-            df[key + "_aggr"] = df["stock_id"].map(value)
-    
-    if "median_size" in df.columns:
-        df["high_volume"] = np.where(df["size"] > df["median_size"], 1, 0)
-
     # Date features
     #df["date_id_sin"] = np.sin(2. * np.pi * df["date_id"]/5.)
     #df["date_id_cos"] = np.cos(2. * np.pi * df["date_id"]/5.)
+    #df["minute"] = df["seconds_in_bucket"] // 60
+    #df["second"] = df["seconds_in_bucket"] % 60
+    #df["dow"] = df[[["date_id", "seconds_in_bucket"], "seconds_in_bucket"]] % 5
+    #df["dom"] = df["date_id"] % 20
 
-    # Combinations of price variables
-    prices = ["reference_price", "far_price", "near_price", "ask_price", "bid_price", "wap"]
+    # Remove negative values
+    df["imbalance_buy_sell_flag"] += 1
 
+    # Price features
     df["mid_price"] = (df["ask_price"] + df["bid_price"])/ 2.
 
     """
-    rolling_features = True
-    if rolling_features:
-        for price in prices:
-            df[f"log_return_{price}"] = df.groupby(["time_id"])[price].apply(log_return).reset_index()[price]
+    for price in ["wap", "bid_price", "ask_price"]:
+        df[f"log_return_{price}"] = df.groupby(["time_id"])[price].apply(log_return).reset_index()[price]
     """
 
+    """
+    for (stock_id, date_id), frame in df.groupby(["stock_id", "date_id"]):
+        frame["stock_return"] = ((frame["wap"] / frame["wap"].shift(6)).shift(-6) - 1) * 10_000
+        df["stock_id"].map(value)
+    """
+
+    # Combinations of price variables
+    prices = ["reference_price", "far_price", "near_price", "ask_price", "bid_price", "wap"]
     # Price features
     for c in combinations(prices, 2):
         #df[f"{c[0]}_plus_{c[1]}"] = (df[f"{c[0]}"] + df[f"{c[1]}"])
