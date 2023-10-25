@@ -54,6 +54,9 @@ def make_features(df: pd.DataFrame, reduce_memory: bool = True) -> None:
     # Price features
     df["mid_price"] = (df["ask_price"] + df["bid_price"])/ 2.
 
+    # Adding previous date target as feature
+    df["prev_target"] = df.groupby(["stock_id", "seconds_in_bucket"])["target"].shift(1)
+
     """
     for price in ["wap", "bid_price", "ask_price"]:
         df[f"log_return_{price}"] = df.groupby(["time_id"])[price].apply(log_return).reset_index()[price]
@@ -86,6 +89,8 @@ def make_features(df: pd.DataFrame, reduce_memory: bool = True) -> None:
         logger.info("Reducing data memory footprint...")
         downcast(df)
 
+    return df
+
 
 
 def select_features(df: pd.DataFrame, features: List[str] = None, reduce_memory: bool = True) -> None:
@@ -98,3 +103,5 @@ def select_features(df: pd.DataFrame, features: List[str] = None, reduce_memory:
     if reduce_memory:
         logger.info("Reducing data memory footprint...")
         downcast(df)
+
+    return df
