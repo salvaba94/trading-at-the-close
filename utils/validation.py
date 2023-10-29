@@ -13,6 +13,7 @@ except:
 from .files import save_model
 
 
+
 class TrainTestSplit(object):
 
     def __init__(
@@ -56,7 +57,6 @@ class TrainTestSplit(object):
 
 
 
-
 def cross_validate(
         model_type, 
         model_params, 
@@ -87,7 +87,9 @@ def cross_validate(
             kwargs["sample_weight"] = kwargs["sample_weight"][train_index]
 
         model = model_type(**model_params)
-        model.set_params(random_state=random.randint(1, 9999))
+        seed = random.randint(1, 9999)
+        logger.info(f"Model trained with seed {seed}")
+        model.set_params(random_state=seed)
 
         start = timer()
         model.fit(x_train, y_train, eval_set=[(x_val, y_val)], *args, **kwargs)
