@@ -1,5 +1,7 @@
 import pandas as pd
 
+#==============================================================================
+
 def merge_df(df1, df2, on):
 
     if len(df1) == 0:
@@ -15,3 +17,5 @@ def merge_df(df1, df2, on):
             df3.rename(columns={i_col+'_x':i_col},inplace=True)
             df3.drop(columns=[i_col+'_y'],inplace=True)
         return df3
+
+#==============================================================================

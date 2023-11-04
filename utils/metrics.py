@@ -1,7 +1,7 @@
 import numpy as np
 from sklearn.metrics import mean_absolute_error, mean_squared_error, mean_absolute_percentage_error
 
-
+#==============================================================================
 
 def symmetric_mean_absolute_percentage_error(A, F):
     '''Calculate symmetric MAPE metric'''
@@ -11,7 +11,7 @@ def symmetric_mean_absolute_percentage_error(A, F):
         return 100
     return 100 / len_ * np.nansum(tmp)
 
-
+#==============================================================================
 
 def calculate_metrics(model, x, y_gt):
     '''Get model evaluation metrics on the test set.'''
@@ -26,3 +26,5 @@ def calculate_metrics(model, x, y_gt):
     smape = symmetric_mean_absolute_percentage_error(y_gt, y_pred)
     
     return mae, mse, mape, smape
+
+#==============================================================================

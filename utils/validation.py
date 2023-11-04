@@ -13,8 +13,11 @@ except:
 from .files import save_model
 
 
+#==============================================================================
 
 class TrainTestSplit(object):
+
+#==============================================
 
     def __init__(
         self,
@@ -30,7 +33,7 @@ class TrainTestSplit(object):
 
         self._by_date_mode = by_date_mode
 
-
+#==============================================
 
     def split(
         self,
@@ -43,7 +46,7 @@ class TrainTestSplit(object):
         n_samples = data.shape[0]
 
         if self._by_date_mode:
-            n_train = data.loc[date_id <= self._test_size].shape[0]
+            n_train = data.loc[date_id <= date_id.max() - self._test_size].shape[0]
         else:
             n_train = n_samples - int(self._test_size * n_samples)
 
@@ -55,7 +58,7 @@ class TrainTestSplit(object):
         for _ in range(self.n_splits):
             yield train, test 
 
-
+#==============================================================================
 
 def cross_validate(
         model_type, 
@@ -112,3 +115,5 @@ def cross_validate(
     logger.info("=" * 30)
     
     return scores, models
+
+#==============================================================================
