@@ -12,6 +12,7 @@ except:
 
 from .files import save_model
 
+#==============================================================================
 
 class TrainTestSplit(object):
 
@@ -42,7 +43,7 @@ class TrainTestSplit(object):
         n_samples = data.shape[0]
 
         if self._by_date_mode:
-            n_train = data.loc[date_id <= self._test_size].shape[0]
+            n_train = data.loc[date_id <= date_id.max() - self._test_size].shape[0]
         else:
             n_train = n_samples - int(self._test_size * n_samples)
 
@@ -55,6 +56,7 @@ class TrainTestSplit(object):
             yield train, test 
 
 
+#==============================================================================
 
 
 def cross_validate(
@@ -87,16 +89,25 @@ def cross_validate(
             kwargs["sample_weight"] = kwargs["sample_weight"][train_index]
 
         model = model_type(**model_params)
-        model.set_params(random_state=random.randint(1, 9999))
+        random_state = random.randint(1, 9999)
+        model.set_params(random_state=random_state)
+
+        logger.info(f"Training model with seed {random_state}")
+
+        eval_set = None
+        if x_val.shape[0] > 0:
+            eval_set = [(x_val, y_val)]
 
         start = timer()
-        model.fit(x_train, y_train, eval_set=[(x_val, y_val)], *args, **kwargs)
+
+        model.fit(x_train, y_train, eval_set=eval_set, *args, **kwargs)
         end = timer()
         
         models.append(model)
 
-        y_pred = model.predict(x_val)
-        scores[i] = scorer(y_pred, y_val)
+        if eval_set is not None:
+            y_pred = model.predict(x_val)
+            scores[i] = scorer(y_pred, y_val)
 
         logger.info(f"Fold {i + 1}: {scores[i]:.4f} (took {end - start:.2f}s)")
 
@@ -110,3 +121,5 @@ def cross_validate(
     logger.info("=" * 30)
     
     return scores, models
+
+#==============================================================================
