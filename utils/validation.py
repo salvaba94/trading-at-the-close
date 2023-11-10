@@ -14,6 +14,49 @@ from .files import save_model
 
 #==============================================================================
 
+class PurgedEmbargoSplit(object):
+
+    def __init__(
+        self,
+        n_splits: int = 5,
+        gap: int = 5,
+        *args,
+        **kwargs
+    ):
+    
+        self.n_splits = n_splits
+        self._gap = gap
+
+
+    def split(
+        self,
+        date_id,
+        *args, 
+        **kwargs
+    ):
+
+        fold_size = date_id.unique().shape[0] // self.n_splits
+
+        for i in range(self.n_splits):
+            start = i * fold_size
+            end = start + fold_size
+            if i < self.n_splits - 1:  # No need to purge after the last fold
+                purged_start = end - 2
+                purged_end = end + self._gap + 2
+                train_indices = (date_id >= start) & (date_id < purged_start) | (date_id > purged_end)
+            else:
+                train_indices = (date_id >= start) & (date_id < end)
+            
+            test_indices = (date_id >= end) & (date_id < end + fold_size)
+
+            train_indices = train_indices.index[train_indices]
+            test_indices = test_indices.index[test_indices]
+
+            yield train_indices, test_indices
+
+
+#==============================================================================
+
 class TrainTestSplit(object):
 
     def __init__(
@@ -31,19 +74,17 @@ class TrainTestSplit(object):
         self._by_date_mode = by_date_mode
 
 
-
     def split(
         self,
-        data, 
         date_id,
         *args, 
         **kwargs
     ):
 
-        n_samples = data.shape[0]
+        n_samples = date_id.shape[0]
 
         if self._by_date_mode:
-            n_train = data.loc[date_id <= date_id.max() - self._test_size].shape[0]
+            n_train = date_id.loc[date_id <= date_id.max() - self._test_size].shape[0]
         else:
             n_train = n_samples - int(self._test_size * n_samples)
 
@@ -80,7 +121,7 @@ def cross_validate(
     models = []
     logger.info(f"Starting evaluation...")
     logger.info("=" * 30)
-    for i, (train_index, val_index) in enumerate(cv.split(x, date_id=date_id, groups=groups)):
+    for i, (train_index, val_index) in enumerate(cv.split(date_id=date_id, groups=groups)):
         
         x_train, x_val = x.iloc[train_index], x.iloc[val_index]
         y_train, y_val = y.iloc[train_index], y.iloc[val_index]

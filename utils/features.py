@@ -174,11 +174,19 @@ def feature_engineering(
     logger.info("Generating mixed features...")
     df = generate_mixed_features(df)
 
+    if reduce_memory:
+        logger.info("Reducing data memory footprint...")
+        downcast(df)
+
     ########################
     # Aggregated features
     ########################
     logger.info("Generating aggregated features...")
     df = generate_aggregated_features(df, weights, clusters)
+
+    if reduce_memory:
+        logger.info("Reducing data memory footprint...")
+        downcast(df)
 
     ########################
     # Rolling features
@@ -211,20 +219,21 @@ def generate_size_features(df: pd.DataFrame) -> pd.DataFrame:
     df["imbalance_size.matched_size.ratio"] = df["imbalance_size"] / df["matched_size"]
     """
 
-    sizes = ["ask_size", "bid_size"]
+    sizes = ["ask_size", "bid_size", "imbalance_size", "matched_size"]
     for c in combinations(sizes, 2):
         df[f"{c[0]}.{c[1]}.spread"] = df[c[0]] - df[c[1]]
         df[f"{c[0]}.{c[1]}.total"] = df[c[0]] + df[c[1]]
         df[f"{c[0]}.{c[1]}.ratio"] = df[c[0]] / df[c[1]]
         df[f"{c[0]}.{c[1]}.imbalance"] = (df[c[0]] - df[c[1]])/(df[c[0]] + df[c[1]])
 
+    """
     sizes = ["imbalance_size", "matched_size"]
     for c in combinations(sizes, 2):
         df[f"{c[0]}.{c[1]}.ratio"] = df[c[0]] / df[c[1]]
         df[f"{c[0]}.{c[1]}.imbalance"] = (df[c[0]] - df[c[1]])/(df[c[0]] + df[c[1]])
+    """
 
-    sizes = ["matched_size", "bid_size", "ask_size", "imbalance_size"]
-    # Calculate triplet imbalance features using the Numba-optimized function
+    # Calculate triplet imbalance features
     for c in combinations(sizes, 3):
         max_ = df[list(c)].max(axis=1)
         min_ = df[list(c)].min(axis=1)
@@ -280,9 +289,24 @@ def generate_mixed_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # Calculate additional features
     #df["prices.spread.imbalance_size.bid_price.product"] = df["ask_price.bid_price.spread"] * df["imbalance_size"] 
-    df["prices.spread.sizes.imbalances.product"] = df["ask_price.bid_price.spread"] * df["ask_size.bid_size.imbalance"]
+    df["prices.spread.sizes.imbalance.product"] = df["ask_price.bid_price.spread"] * df["ask_size.bid_size.imbalance"]
     #df["prices.spread.product"] = df["ask_price.bid_price.spread"] * df["far_price.near_price.spread"]
     df["imbalance_buy_sell_flag"] += 1
+
+    #df["ask_price.ask_size.product"] = df["ask_price"] * df["ask_size"]
+    #df["bid_price.bid_size.product"] = df["bid_price"] * df["bid_size"]
+    #df["wap.size.product"] = df["wap"] * df["ask_size.bid_size.total"]
+    #df["reference_price.size.product"] = df["reference_price"] * df["ask_size.bid_size.total"]
+    #df["far_price.ask_size.product"] = df["far_price"] * df["ask_size"]
+    #df["near_price.bid_size.product"] = df["near_price"] * df["bid_size"]
+
+    """
+    price_size = ["ask_price.ask_size.product", "bid_price.bid_size.product", "wap.size.product", "ask_price", "bid_price", "wap"]
+    for c in combinations(price_size, 2):
+        df[f"{c[0]}.{c[1]}.spread"] = df[c[0]] - df[c[1]]
+        df[f"{c[0]}.{c[1]}.imbalance"] = (df[c[0]] - df[c[1]])/(df[c[0]] + df[c[1]])
+    """
+
 
     return df
 
@@ -314,9 +338,9 @@ def generate_rolling_features(df: pd.DataFrame, revealed_target: bool = True) ->
     rolling_sample = df.groupby(["stock_id", "date_id"])
     df[f"imbalance_buy_sell_flag.shift.1"] = rolling_sample["imbalance_buy_sell_flag"].shift(1)
 
-    sizes = ["ask_size", "bid_size", "matched_size", "imbalance_size"]
-    prices = ["ask_price", "bid_price", "reference_price", "wap"]
-    for col in prices + sizes:
+    columns = ["ask_size", "bid_size", "matched_size", "imbalance_size", "ask_price", "bid_price", "reference_price", 
+               "wap", "far_price", "near_price"]
+    for col in columns:
         for window in [1,]:
             df[f"{col}.pct_change.{window}"] = rolling_sample[col].pct_change(window)
 
@@ -355,8 +379,8 @@ def generate_aggregated_features(df: pd.DataFrame, weights: Mapping[int, Any] = 
 
     apply_engine = "numba"
 
-    sizes = ["ask_size", "bid_size", "imbalance_size", "matched_size", 
-             "ask_size.bid_size.total", "ask_size.bid_size.imbalance", "imbalance_size.matched_size.imbalance"]
+    sizes = ["ask_size", "bid_size", "imbalance_size", "matched_size", "ask_size.bid_size.total", 
+             "ask_size.bid_size.imbalance", "imbalance_size.matched_size.total", "imbalance_size.matched_size.imbalance"]
     prices = ["reference_price", "ask_price", "bid_price", "wap"]
 
     if weights is not None:
@@ -370,12 +394,6 @@ def generate_aggregated_features(df: pd.DataFrame, weights: Mapping[int, Any] = 
     cluster_aggregations = {}
     cluster_indx = ["date_id", "seconds_in_bucket", "stock_clusters"]
     cluster_sample = df.groupby(cluster_indx)
-
-    for elem in sizes + prices:
-        cluster_aggregations[elem + ".mean"] = cluster_sample[elem].mean(engine=apply_engine).to_dict()
-        cluster_aggregations[elem + ".std" ] = cluster_sample[elem].std(engine=apply_engine).to_dict()
-
-    df = apply_aggregations(cluster_indx, cluster_aggregations, df, suffix="cluster_aggr")
 
 
     ###########################################
@@ -391,15 +409,20 @@ def generate_aggregated_features(df: pd.DataFrame, weights: Mapping[int, Any] = 
         stock_aggregations[size + ".std" ] = stock_sample[size].std(engine=apply_engine).to_dict()
     """
 
-    for price in prices + sizes:
+    for elem in prices + sizes:
         if weights is not None:
-            stock_aggregations[price + ".mean.weighted"] = stock_sample[[price, "stock_weights"]].apply(get_weighted_avg).to_dict()
-            stock_aggregations[price + ".std.weighted"] = stock_sample[[price, "stock_weights"]].apply(get_weighted_std).to_dict()
+            cluster_aggregations[elem + ".mean.weighted"] = cluster_sample[[elem, "stock_weights"]].apply(get_weighted_avg).to_dict()
+            cluster_aggregations[elem + ".std.weighted" ] = cluster_sample[[elem, "stock_weights"]].apply(get_weighted_std).to_dict()
+            stock_aggregations[elem + ".mean.weighted"] = stock_sample[[elem, "stock_weights"]].apply(get_weighted_avg).to_dict()
+            stock_aggregations[elem + ".std.weighted"] = stock_sample[[elem, "stock_weights"]].apply(get_weighted_std).to_dict()
 
         else:
+            cluster_aggregations[elem + ".mean"] = cluster_sample[elem].mean(engine=apply_engine).to_dict()
+            cluster_aggregations[elem + ".std" ] = cluster_sample[elem].std(engine=apply_engine).to_dict()
             stock_aggregations[price + ".mean"] = stock_sample[price].mean(engine=apply_engine).to_dict()
             stock_aggregations[price + ".std"] = stock_sample[price].std(engine=apply_engine).to_dict()
 
+    df = apply_aggregations(cluster_indx, cluster_aggregations, df, suffix="cluster_aggr")
     df = apply_aggregations(stock_indx, stock_aggregations, df, suffix="stock_aggr")
 
     return df
