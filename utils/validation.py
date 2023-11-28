@@ -12,12 +12,53 @@ except:
 
 from .files import save_model
 
+#==============================================================================
+
+class PurgedEmbargoSplit(object):
+
+    def __init__(
+        self,
+        n_splits: int = 5,
+        gap: int = 5,
+        *args,
+        **kwargs
+    ):
+    
+        self.n_splits = n_splits
+        self._gap = gap
+
+
+    def split(
+        self,
+        date_id,
+        *args, 
+        **kwargs
+    ):
+
+        fold_size = date_id.unique().shape[0] // self.n_splits
+
+        for i in range(1):
+            i = self.n_splits - 1
+            start = i * fold_size
+            end = start + fold_size
+            if i < self.n_splits - 1:  # No need to purge after the last fold
+                purged_start = end - 2
+                purged_end = end + self._gap + 2
+                train_indices = (date_id >= start) & (date_id < purged_start) | (date_id > purged_end)
+            else:
+                train_indices = (date_id >= start) & (date_id < end)
+            
+            test_indices = (date_id >= end) & (date_id < end + fold_size)
+
+            train_indices = train_indices.index[train_indices]
+            test_indices = test_indices.index[test_indices]
+
+            yield train_indices, test_indices
+
 
 #==============================================================================
 
 class TrainTestSplit(object):
-
-#==============================================
 
     def __init__(
         self,
@@ -33,20 +74,18 @@ class TrainTestSplit(object):
 
         self._by_date_mode = by_date_mode
 
-#==============================================
 
     def split(
         self,
-        data, 
         date_id,
         *args, 
         **kwargs
     ):
 
-        n_samples = data.shape[0]
+        n_samples = date_id.shape[0]
 
         if self._by_date_mode:
-            n_train = data.loc[date_id <= date_id.max() - self._test_size].shape[0]
+            n_train = date_id.loc[date_id <= date_id.max() - self._test_size].shape[0]
         else:
             n_train = n_samples - int(self._test_size * n_samples)
 
@@ -58,7 +97,9 @@ class TrainTestSplit(object):
         for _ in range(self.n_splits):
             yield train, test 
 
+
 #==============================================================================
+
 
 def cross_validate(
         model_type, 
@@ -75,14 +116,14 @@ def cross_validate(
     ):
 
     scores = np.zeros(cv.n_splits)
-    seed = model_params.get("random_seed", 1020)
-    random.seed(seed)
+    #seed = model_params.get("random_seed", 1020)
+    #random.seed(seed)
 
     models = []
     logger.info(f"Starting evaluation...")
     logger.info("=" * 30)
-    for i, (train_index, val_index) in enumerate(cv.split(x, date_id=date_id, groups=groups)):
-        
+    for i, (train_index, val_index) in enumerate(cv.split(date_id=date_id, groups=groups)):
+
         x_train, x_val = x.iloc[train_index], x.iloc[val_index]
         y_train, y_val = y.iloc[train_index], y.iloc[val_index]
 
@@ -90,18 +131,25 @@ def cross_validate(
             kwargs["sample_weight"] = kwargs["sample_weight"][train_index]
 
         model = model_type(**model_params)
-        seed = random.randint(1, 9999)
-        logger.info(f"Model trained with seed {seed}")
-        model.set_params(random_state=seed)
+        #random_state = random.randint(1, 9999)
+        #model.set_params(random_state=random_state)
+
+        #logger.info(f"Training model with seed {random_state}")
+
+        eval_set = None
+        if x_val.shape[0] > 0:
+            eval_set = [(x_val, y_val)]
 
         start = timer()
-        model.fit(x_train, y_train, eval_set=[(x_val, y_val)], *args, **kwargs)
+
+        model.fit(x_train, y_train, eval_set=eval_set, *args, **kwargs)
         end = timer()
         
         models.append(model)
 
-        y_pred = model.predict(x_val)
-        scores[i] = scorer(y_pred, y_val)
+        if eval_set is not None:
+            y_pred = model.predict(x_val)
+            scores[i] = scorer(y_pred, y_val)
 
         logger.info(f"Fold {i + 1}: {scores[i]:.4f} (took {end - start:.2f}s)")
 
