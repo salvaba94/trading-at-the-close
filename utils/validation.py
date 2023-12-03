@@ -11,6 +11,7 @@ except:
     logger = logging.getLogger("__main__")
 
 from .files import save_model
+from .ensembling import pow_mean
 
 #==============================================================================
 
@@ -111,17 +112,20 @@ def cross_validate(
         scorer=mean_absolute_error, 
         groups=None, 
         job_path=None, 
+        power=None,
         *args, 
         **kwargs
     ):
 
     scores = np.zeros(cv.n_splits)
-    #seed = model_params.get("random_seed", 1020)
-    #random.seed(seed)
+    seed = model_params.get("random_seed", 1020)
+    random.seed(seed)
 
     models = []
     logger.info(f"Starting evaluation...")
     logger.info("=" * 30)
+
+    y_preds = []
     for i, (train_index, val_index) in enumerate(cv.split(date_id=date_id, groups=groups)):
 
         x_train, x_val = x.iloc[train_index], x.iloc[val_index]
@@ -131,10 +135,10 @@ def cross_validate(
             kwargs["sample_weight"] = kwargs["sample_weight"][train_index]
 
         model = model_type(**model_params)
-        #random_state = random.randint(1, 9999)
-        #model.set_params(random_state=random_state)
+        random_state = random.randint(1, 9999)
+        model.set_params(random_state=random_state)
 
-        #logger.info(f"Training model with seed {random_state}")
+        logger.info(f"Training model with seed {random_state}")
 
         eval_set = None
         if x_val.shape[0] > 0:
@@ -150,8 +154,9 @@ def cross_validate(
         if eval_set is not None:
             y_pred = model.predict(x_val)
             scores[i] = scorer(y_pred, y_val)
+            y_preds.append(y_pred)
 
-        logger.info(f"Fold {i + 1}: {scores[i]:.4f} (took {end - start:.2f}s)")
+            logger.info(f"Fold {i + 1}: {scores[i]:.4f} (took {end - start:.2f}s)")
 
         if job_path is not None:
             model_path = job_path.joinpath("models")
@@ -159,7 +164,11 @@ def cross_validate(
             save_model(model, file=model_path.joinpath("model-" + str(i + 1).zfill(2) + ".pkl"))
 
     logger.info("-" * 30)
-    logger.success(f"Average MAE = {scores.mean():.4f} ± {scores.std():.2f}")
+    logger.success(f"Average MAE = {scores.mean():.4f} ± {scores.std():.4f}")
+    if power is not None:
+        y_pred = pow_mean(y_preds, power)
+        score = scorer(y_pred, y_val)
+        logger.success(f"Ensembling MAE = {score:.4f}")
     logger.info("=" * 30)
     
     return scores, models

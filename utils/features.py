@@ -17,11 +17,6 @@ from .compression import downcast
 
 #==============================================================================
 
-# Log return
-def log_return(series):
-    return np.log(series).diff()
-
-
 # 📊 Function to compute triplet imbalance in parallel using Numba
 @njit(parallel=True)
 def compute_triplet_imbalance(df_values, comb_indices):
@@ -47,9 +42,7 @@ def compute_triplet_imbalance(df_values, comb_indices):
 
     return imbalance_features
 
-#==============================================================================
-
-# Function to calculate triplet imbalance for given price data and a DataFrame
+# 📈 Function to calculate triplet imbalance for given price data and a DataFrame
 def calculate_triplet_imbalance_numba(price, df):
     # Convert DataFrame to numpy array for Numba compatibility
     df_values = df[price].values
@@ -220,27 +213,23 @@ def generate_size_features(df: pd.DataFrame) -> pd.DataFrame:
     df["imbalance_size.matched_size.ratio"] = df["imbalance_size"] / df["matched_size"]
     """
 
-    sizes = ["ask_size", "bid_size", "imbalance_size", "matched_size"]
-    for c in combinations(sizes, 2):
+    for c in combinations(["ask_size", "bid_size"], 2):
         df[f"{c[0]}.{c[1]}.spread"] = df[c[0]] - df[c[1]]
         df[f"{c[0]}.{c[1]}.total"] = df[c[0]] + df[c[1]]
         df[f"{c[0]}.{c[1]}.ratio"] = df[c[0]] / df[c[1]]
         df[f"{c[0]}.{c[1]}.imbalance"] = (df[c[0]] - df[c[1]])/(df[c[0]] + df[c[1]])
 
-    """
-    sizes = ["imbalance_size", "matched_size"]
-    for c in combinations(sizes, 2):
+    for c in combinations(["imbalance_size", "matched_size"], 2):
+        df[f"{c[0]}.{c[1]}.spread"] = df[c[0]] - df[c[1]]
+        df[f"{c[0]}.{c[1]}.total"] = df[c[0]] + df[c[1]]
         df[f"{c[0]}.{c[1]}.ratio"] = df[c[0]] / df[c[1]]
         df[f"{c[0]}.{c[1]}.imbalance"] = (df[c[0]] - df[c[1]])/(df[c[0]] + df[c[1]])
-    """
 
-    # Calculate triplet imbalance features
-    for c in combinations(sizes, 3):
-        max_ = df[list(c)].max(axis=1)
-        min_ = df[list(c)].min(axis=1)
-        mid_ = df[list(c)].sum(axis=1) - min_ - max_
-
-        df[f"{c[0]}.{c[1]}.{c[2]}.imbalance"] = (max_ - mid_)/(mid_ - min_)
+    # Calculate triplet imbalance features using the Numba-optimized function
+    sizes = ["ask_size", "bid_size", "imbalance_size", "matched_size"]
+    for c in [sizes]:
+        triplet_feature = calculate_triplet_imbalance_numba(c, df)
+        df[triplet_feature.columns] = triplet_feature.values
 
     return df
 
@@ -258,19 +247,10 @@ def generate_price_features(df: pd.DataFrame) -> pd.DataFrame:
         df[f"{c[0]}.{c[1]}.imbalance"] = (df[c[0]] - df[c[1]])/(df[c[0]] + df[c[1]])
 
     # Calculate triplet imbalance features using the Numba-optimized function
-    for c in combinations(prices, 3):
-        max_ = df[list(c)].max(axis=1)
-        min_ = df[list(c)].min(axis=1)
-        mid_ = df[list(c)].sum(axis=1) - min_ - max_
-
-        df[f"{c[0]}.{c[1]}.{c[2]}.imbalance"] = (max_ - mid_)/(mid_ - min_)
-
-    """
-    # Calculate triplet imbalance features using the Numba-optimized function
     prices = ["ask_price", "bid_price", "wap", "reference_price"]
-    triplet_feature = calculate_triplet_imbalance_numba(prices, df)
-    df[triplet_feature.columns] = triplet_feature.values
-    """
+    for c in [prices]:
+        triplet_feature = calculate_triplet_imbalance_numba(c, df)
+        df[triplet_feature.columns] = triplet_feature.values
 
     return df
 
@@ -288,11 +268,15 @@ def generate_time_features(df: pd.DataFrame) -> pd.DataFrame:
 
 def generate_mixed_features(df: pd.DataFrame) -> pd.DataFrame:
 
+
+    rolling_sample = df.groupby(["stock_id", "date_id"])
+
     # Calculate additional features
-    #df["prices.spread.imbalance_size.bid_price.product"] = df["ask_price.bid_price.spread"] * df["imbalance_size"] 
+    df["prices.spread.imbalance_size.bid_price.product"] = df["ask_price.bid_price.spread"] * df["imbalance_size"] 
     df["prices.spread.sizes.imbalance.product"] = df["ask_price.bid_price.spread"] * df["ask_size.bid_size.imbalance"]
-    df["prices.imbalance.sizes.spread.product"] = df["ask_price.bid_price.imbalance"] * df["ask_size.bid_size.spread"]
+    df["prices.imbalance.sizes.spread.product"] = df["ask_size.bid_size.imbalance"] * df["ask_price.bid_price.spread"]
     df["prices.spread.product"] = df["ask_price.bid_price.spread"] * df["far_price.near_price.spread"]
+
     #df["imbalance_buy_sell_flag"] += 1
 
     #df["ask_price.ask_size.product"] = df["ask_price"] * df["ask_size"]
@@ -302,13 +286,6 @@ def generate_mixed_features(df: pd.DataFrame) -> pd.DataFrame:
     #df["far_price.ask_size.product"] = df["far_price"] * df["ask_size"]
     #df["near_price.bid_size.product"] = df["near_price"] * df["bid_size"]
 
-    """
-    price_size = ["ask_price.ask_size.product", "bid_price.bid_size.product", "wap.size.product", "ask_price", "bid_price", "wap"]
-    for c in combinations(price_size, 2):
-        df[f"{c[0]}.{c[1]}.spread"] = df[c[0]] - df[c[1]]
-        df[f"{c[0]}.{c[1]}.imbalance"] = (df[c[0]] - df[c[1]])/(df[c[0]] + df[c[1]])
-    """
-
 
     return df
 
@@ -316,25 +293,11 @@ def generate_mixed_features(df: pd.DataFrame) -> pd.DataFrame:
 
 def generate_rolling_features(df: pd.DataFrame, revealed_target: bool = True) -> pd.DataFrame:
 
-    df["imbalance_size.diff.matched_size.ratio"] = df.groupby("stock_id")["imbalance_size"].diff() / df["matched_size"]
-    df["ask_price.bid_price.spread.diff"] = df.groupby("stock_id")["ask_price.bid_price.spread"].diff()
 
     engine = "numba"
-
     rolling_sample = df.groupby(["stock_id", "date_id"])
 
-    """
-    # Calculate shifted and return features for specific columns
-    for col in ["matched_size", "imbalance_size", "reference_price", "imbalance_buy_sell_flag"]:
-        for window in [1, 2, 3, 10]:
-            df[f"{col}.shift.{window}"] = rolling_sample[col].shift(window)
-            df[f"{col}.pct_change.{window}"] = rolling_sample[col].pct_change(window)
 
-    # Calculate diff features for specific columns
-    for col in ["ask_price", "bid_price", "ask_size", "bid_size"]:
-        for window in [1, 2, 3, 10]:
-            df[f"{col}.diff.{window}"] = rolling_sample[col].diff(window)
-    """
 
     # Rolling averages
     """
@@ -349,16 +312,17 @@ def generate_rolling_features(df: pd.DataFrame, revealed_target: bool = True) ->
         target_sample = df.groupby(["stock_id", "seconds_in_bucket"])
         df[f"revealed_target"] = target_sample["target"].shift(1)
 
-    for col in ["imbalance_buy_sell_flag"]:
-        for window in [1, 2, 3, 10]:
+    for col in ["matched_size", "imbalance_size", "reference_price", "wap", "imbalance_buy_sell_flag"]:
+        for window in [1, 2, 3, 5, 10]:
             df[f"{col}.shift.{window}"] = rolling_sample[col].shift(window)
-
-    columns = ["ask_size", "bid_size", "matched_size", "imbalance_size", "ask_price", "bid_price", "reference_price", 
-               "wap", "far_price", "near_price"]
-    for col in columns:
-        for window in [1, 2, 3, 10]:
             df[f"{col}.pct_change.{window}"] = rolling_sample[col].pct_change(window)
 
+    for col in ["ask_price", "bid_price", "ask_size", "bid_size", "ask_size.bid_size.ratio",
+                "prices.imbalance.sizes.spread.product", "ask_price.bid_price.spread", "reference_price.wap.spread"]:
+        for window in [1, 2, 3, 5, 10]:
+            df[f"{col}.diff.{window}"] = rolling_sample[col].diff(window)
+
+    df["imbalance_size.diff.matched_size.ratio"] = rolling_sample["imbalance_size"].diff() / df["matched_size"]
     #df[f"wap.pct_change.1"] = rolling_sample["wap"].pct_change(1)
 
     return df
@@ -398,19 +362,17 @@ def generate_aggregated_features(df: pd.DataFrame, weights: Mapping[int, Any] = 
     # Prize and size aggregations
     ###########################################
 
-    """
     prices = ["reference_price", "far_price", "near_price", "ask_price", "bid_price", "wap"]
     sizes = ["matched_size", "bid_size", "ask_size", "imbalance_size"]
     # Calculate various statistical aggregation features
     for func in ["mean", "std", "skew", "kurt"]:
         df[f"all_prices.{func}"] = df[prices].agg(func, axis=1)
         df[f"all_sizes.{func}"] = df[sizes].agg(func, axis=1)
-    """
 
-
-    sizes = ["ask_size", "bid_size", "imbalance_size", "matched_size", "ask_size.bid_size.total", 
-             "ask_size.bid_size.imbalance", "imbalance_size.matched_size.total", "imbalance_size.matched_size.imbalance"]
-    prices = ["reference_price", "ask_price", "bid_price", "wap"]
+    sizes = ["ask_size", "bid_size", "imbalance_size", "matched_size", 
+        "prices.imbalance.sizes.spread.product"]
+    prices = ["reference_price", "ask_price", "bid_price", "wap", 
+        "ask_price.bid_price.spread", "reference_price.wap.spread"]
 
     if weights is not None:
         df["stock_weights"] = df["stock_id"].map(weights)
@@ -420,9 +382,10 @@ def generate_aggregated_features(df: pd.DataFrame, weights: Mapping[int, Any] = 
     ###########################################
     # Cluster aggregations (by industries)
     ###########################################
-    cluster_aggregations = {}
-    cluster_indx = ["date_id", "seconds_in_bucket", "stock_clusters"]
-    cluster_sample = df.groupby(cluster_indx)
+    if clusters is not None:
+        cluster_aggregations = {}
+        cluster_indx = ["date_id", "seconds_in_bucket", "stock_clusters"]
+        cluster_sample = df.groupby(cluster_indx)
 
 
     ###########################################
@@ -435,18 +398,25 @@ def generate_aggregated_features(df: pd.DataFrame, weights: Mapping[int, Any] = 
 
     for elem in prices + sizes:
         if weights is not None:
-            cluster_aggregations[elem + ".mean.weighted"] = cluster_sample[[elem, "stock_weights"]].apply(get_weighted_avg).to_dict()
-            cluster_aggregations[elem + ".std.weighted" ] = cluster_sample[[elem, "stock_weights"]].apply(get_weighted_std).to_dict()
             stock_aggregations[elem + ".mean.weighted"] = stock_sample[[elem, "stock_weights"]].apply(get_weighted_avg).to_dict()
             stock_aggregations[elem + ".std.weighted"] = stock_sample[[elem, "stock_weights"]].apply(get_weighted_std).to_dict()
+            df[elem + ".weighted"] = df["stock_weights"] * df[elem]
 
         else:
+            stock_aggregations[elem + ".mean"] = stock_sample[elem].mean(engine=apply_engine).to_dict()
+            stock_aggregations[elem + ".std"] = stock_sample[elem].std(engine=apply_engine).to_dict()
+
+        if clusters is not None:
             cluster_aggregations[elem + ".mean"] = cluster_sample[elem].mean(engine=apply_engine).to_dict()
             cluster_aggregations[elem + ".std" ] = cluster_sample[elem].std(engine=apply_engine).to_dict()
-            stock_aggregations[price + ".mean"] = stock_sample[price].mean(engine=apply_engine).to_dict()
-            stock_aggregations[price + ".std"] = stock_sample[price].std(engine=apply_engine).to_dict()
 
-    df = apply_aggregations(cluster_indx, cluster_aggregations, df, suffix="cluster_aggr")
+    if weights is not None:
+        df["wap.weighted.momentum"] = df.groupby(["stock_id", "date_id"])["wap.weighted"].pct_change(periods=6)
+    else:
+        df["wap.momentum"] = df.groupby(["stock_id", "date_id"])["wap"].pct_change(periods=6)
+
+    #if clusters is not None:
+    #    df = apply_aggregations(cluster_indx, cluster_aggregations, df, suffix="cluster_aggr")
     df = apply_aggregations(stock_indx, stock_aggregations, df, suffix="stock_aggr")
 
     return df
@@ -459,18 +429,29 @@ def generate_global_features(df: pd.DataFrame) -> None:
     apply_engine = "numba"
 
     global_stock_id_feats = {
-        "size.median": df.groupby("stock_id")["bid_size"].mean(engine=apply_engine) + df.groupby("stock_id")["ask_size"].mean(engine=apply_engine),
+        "size.median": df.groupby("stock_id")["bid_size"].median() + df.groupby("stock_id")["ask_size"].median(),
         "size.std": df.groupby("stock_id")["bid_size"].std(engine=apply_engine) + df.groupby("stock_id")["ask_size"].std(engine=apply_engine),
         "size.ptp": df.groupby("stock_id")["bid_size"].max(engine=apply_engine) - df.groupby("stock_id")["bid_size"].min(engine=apply_engine),
-        "price.median": df.groupby("stock_id")["bid_price"].mean(engine=apply_engine) + df.groupby("stock_id")["ask_price"].mean(engine=apply_engine),
+        "price.median": df.groupby("stock_id")["bid_price"].median() + df.groupby("stock_id")["ask_price"].median(),
         "price.std": df.groupby("stock_id")["bid_price"].std(engine=apply_engine) + df.groupby("stock_id")["ask_price"].std(engine=apply_engine),
         "price.ptp": df.groupby("stock_id")["bid_price"].max(engine=apply_engine) - df.groupby("stock_id")["ask_price"].min(engine=apply_engine),
     }
 
     return global_stock_id_feats
 
+
 #==============================================================================
 
+def apply_global_features(df: pd.DataFrame, global_stock_id_feats: Mapping[str, Any]) -> None:
+
+    logger.info("Applying global features...")
+
+    for key, value in global_stock_id_feats.items():
+        df[f"{key}.global"] = df["stock_id"].map(value.to_dict())
+
+    return df
+
+#==============================================================================
 
 def select_features(df: pd.DataFrame, features: List[str] = None, reduce_memory: bool = True) -> None:
 
@@ -483,7 +464,6 @@ def select_features(df: pd.DataFrame, features: List[str] = None, reduce_memory:
         downcast(df)
 
     return df
-
 
 #==============================================================================
 
