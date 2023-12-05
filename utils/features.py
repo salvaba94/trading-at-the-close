@@ -382,10 +382,10 @@ def generate_aggregated_features(df: pd.DataFrame, weights: Mapping[int, Any] = 
     ###########################################
     # Cluster aggregations (by industries)
     ###########################################
-    if clusters is not None:
-        cluster_aggregations = {}
-        cluster_indx = ["date_id", "seconds_in_bucket", "stock_clusters"]
-        cluster_sample = df.groupby(cluster_indx)
+    #if clusters is not None:
+    #    cluster_aggregations = {}
+    #    cluster_indx = ["date_id", "seconds_in_bucket", "stock_clusters"]
+    #    cluster_sample = df.groupby(cluster_indx)
 
 
     ###########################################
@@ -406,18 +406,18 @@ def generate_aggregated_features(df: pd.DataFrame, weights: Mapping[int, Any] = 
             stock_aggregations[elem + ".mean"] = stock_sample[elem].mean(engine=apply_engine).to_dict()
             stock_aggregations[elem + ".std"] = stock_sample[elem].std(engine=apply_engine).to_dict()
 
-        if clusters is not None:
-            cluster_aggregations[elem + ".mean"] = cluster_sample[elem].mean(engine=apply_engine).to_dict()
-            cluster_aggregations[elem + ".std" ] = cluster_sample[elem].std(engine=apply_engine).to_dict()
+        #if clusters is not None:
+        #    cluster_aggregations[elem + ".mean"] = cluster_sample[elem].mean(engine=apply_engine).to_dict()
+        #    cluster_aggregations[elem + ".std" ] = cluster_sample[elem].std(engine=apply_engine).to_dict()
+
+    #if clusters is not None:
+    #    df = apply_aggregations(cluster_indx, cluster_aggregations, df, suffix="cluster_aggr")
+    df = apply_aggregations(stock_indx, stock_aggregations, df, suffix="stock_aggr")
 
     if weights is not None:
         df["wap.weighted.momentum"] = df.groupby(["stock_id", "date_id"])["wap.weighted"].pct_change(periods=6)
     else:
         df["wap.momentum"] = df.groupby(["stock_id", "date_id"])["wap"].pct_change(periods=6)
-
-    #if clusters is not None:
-    #    df = apply_aggregations(cluster_indx, cluster_aggregations, df, suffix="cluster_aggr")
-    df = apply_aggregations(stock_indx, stock_aggregations, df, suffix="stock_aggr")
 
     return df
 
