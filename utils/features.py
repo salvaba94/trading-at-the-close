@@ -132,6 +132,55 @@ def get_weighted_std(x: pd.Series):
 
     return weighted_std(values, weights)
 
+
+#==============================================================================
+
+def get_macd(df, signal=9, fast=12, slow=26):
+
+    macd = df.ewm(span=fast, adjust=False, min_periods=fast).mean() - \
+           df.ewm(span=slow, adjust=False, min_periods=slow).mean()
+    
+    macd_signal = macd.ewm(span=signal, adjust=False, min_periods=signal).mean()
+    macd_diff = macd - macd_signal
+    
+    return pd.DataFrame({"macd": macd, "macd_signal": macd_signal, "macd_diff": macd_diff})
+
+#==============================================================================
+
+def get_bollinger_bands(
+    series, window: int = 20, *, num_stds: tuple[float, ...] = (2, 0, -2), 
+        prefix: str = 'bollinger') -> pd.DataFrame:
+    rolling = series.rolling(window)
+    bband0 = rolling.mean()
+    bband_std = rolling.std(ddof=0)
+    return pd.DataFrame({f'{prefix}.{num_std}': (bband0 + (bband_std * num_std)) for num_std in num_stds})
+
+#==============================================================================
+
+@njit
+def rma(x, n):
+    """Running moving average"""
+    a = np.full_like(x, np.nan)
+
+    a[n] = x[1:n+1].mean()
+    for i in range(n+1, len(x)):
+        a[i] = (a[i-1] * (n - 1) + x[i]) / n
+    return a
+
+#==============================================================================
+
+def get_rsi(df, window):
+    change = df.diff()
+    gain = change.mask(change < 0, 0.)
+    loss = -change.mask(change > 0, -0.)
+
+    avg_gain = rma(gain.to_numpy(), window)
+    avg_loss = rma(loss.to_numpy(), window)
+
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return pd.Series(rsi, index=df.index,) 
+
 #==============================================================================
 
 # Function to do the feature engineering
@@ -213,13 +262,8 @@ def generate_size_features(df: pd.DataFrame) -> pd.DataFrame:
     df["imbalance_size.matched_size.ratio"] = df["imbalance_size"] / df["matched_size"]
     """
 
-    for c in combinations(["ask_size", "bid_size"], 2):
-        df[f"{c[0]}.{c[1]}.spread"] = df[c[0]] - df[c[1]]
-        df[f"{c[0]}.{c[1]}.total"] = df[c[0]] + df[c[1]]
-        df[f"{c[0]}.{c[1]}.ratio"] = df[c[0]] / df[c[1]]
-        df[f"{c[0]}.{c[1]}.imbalance"] = (df[c[0]] - df[c[1]])/(df[c[0]] + df[c[1]])
-
-    for c in combinations(["imbalance_size", "matched_size"], 2):
+    sizes = ["ask_size", "bid_size", "imbalance_size", "matched_size"]
+    for c in combinations(sizes, 2):
         df[f"{c[0]}.{c[1]}.spread"] = df[c[0]] - df[c[1]]
         df[f"{c[0]}.{c[1]}.total"] = df[c[0]] + df[c[1]]
         df[f"{c[0]}.{c[1]}.ratio"] = df[c[0]] / df[c[1]]
@@ -269,14 +313,16 @@ def generate_time_features(df: pd.DataFrame) -> pd.DataFrame:
 def generate_mixed_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
-    rolling_sample = df.groupby(["stock_id", "date_id"])
-
     # Calculate additional features
     df["prices.spread.imbalance_size.bid_price.product"] = df["ask_price.bid_price.spread"] * df["imbalance_size"] 
     df["prices.spread.sizes.imbalance.product"] = df["ask_price.bid_price.spread"] * df["ask_size.bid_size.imbalance"]
     df["prices.imbalance.sizes.spread.product"] = df["ask_size.bid_size.imbalance"] * df["ask_price.bid_price.spread"]
     df["prices.spread.product"] = df["ask_price.bid_price.spread"] * df["far_price.near_price.spread"]
 
+    # This adds the sign of the imbalance to the prices
+    prices = ["reference_price", "wap"]
+    for s in prices:
+        df[s + ".signed"] = df[s] * df["imbalance_buy_sell_flag"]
     #df["imbalance_buy_sell_flag"] += 1
 
     #df["ask_price.ask_size.product"] = df["ask_price"] * df["ask_size"]
@@ -286,7 +332,6 @@ def generate_mixed_features(df: pd.DataFrame) -> pd.DataFrame:
     #df["far_price.ask_size.product"] = df["far_price"] * df["ask_size"]
     #df["near_price.bid_size.product"] = df["near_price"] * df["bid_size"]
 
-
     return df
 
 #==============================================================================
@@ -295,17 +340,37 @@ def generate_rolling_features(df: pd.DataFrame, revealed_target: bool = True) ->
 
 
     engine = "numba"
-    rolling_sample = df.groupby(["stock_id", "date_id"])
-
-
+    rolling_sample_intraday = df.groupby(["stock_id", "date_id"])
+    rolling_sample = df.groupby(["stock_id"])
 
     # Rolling averages
-    """
-    prices = ["reference_price", "far_price", "near_price", "ask_price", "bid_price", "wap"]
-    for price in prices:
-        for window in [4, 8, 10]:
-            df[f"{price}.sma.{window}"] = rolling_sample[col].rolling(window).mean(engine=engine)
-    """
+    prices = ["wap"]
+    for col in prices:
+        for window in [5, 10, 15]:
+             sma = rolling_sample[col].rolling(window).mean()
+             df[f"{col}.sma.{window}"] = sma.reset_index().drop(columns=["stock_id"]).set_index(["level_1"])
+             ewm = rolling_sample[col].ewm(window, adjust=False).mean()
+             df[f"{col}.ewm.{window}"] = ewm.reset_index().drop(columns=["stock_id"]).set_index(["level_1"])
+
+    # RSI (momentum indicator)
+    for col in ["wap"]:
+        rsi = rolling_sample["wap"].apply(lambda x: get_rsi(x, 14))
+        df[f"{col}.rsi.14"] = rsi.reset_index().drop(columns=["stock_id"]).set_index(["level_1"])
+
+    # MACD (trend indicator)
+    for col in ["wap"]:
+        macd = rolling_sample["wap"].apply(lambda x: get_macd(x, 9, 12, 26))
+        macd = macd.reset_index().drop(columns=["stock_id"]).set_index(["level_1"])
+        for inner_col in macd.columns:
+            df[f"{col}.{inner_col}.9.12.26"] = macd[inner_col]
+
+    # Bollinger (volatility indicator)
+    for col in ["wap"]:
+        bollinger = rolling_sample["wap"].apply(lambda x: get_bollinger_bands(x, 20, num_stds=(-2, 0, 2)))
+        bollinger = bollinger.reset_index().drop(columns=["stock_id"]).set_index(["level_1"])
+        for inner_col in bollinger.columns:
+            df[f"{col}.{inner_col}.20"] = bollinger[inner_col]
+
 
     # Add revealed target
     if revealed_target:
@@ -313,17 +378,19 @@ def generate_rolling_features(df: pd.DataFrame, revealed_target: bool = True) ->
         df[f"revealed_target"] = target_sample["target"].shift(1)
 
     for col in ["matched_size", "imbalance_size", "reference_price", "wap", "imbalance_buy_sell_flag"]:
-        for window in [1, 2, 3, 5, 10]:
+        for window in [1, 3, 5, 10]:
             df[f"{col}.shift.{window}"] = rolling_sample[col].shift(window)
+
+    # ROC indicator (momentum indicator)
+    for col in ["matched_size", "imbalance_size", "reference_price", "wap"]:
+        for window in [1, 3, 5, 10]:
             df[f"{col}.pct_change.{window}"] = rolling_sample[col].pct_change(window)
 
-    for col in ["ask_price", "bid_price", "ask_size", "bid_size", "ask_size.bid_size.ratio",
-                "prices.imbalance.sizes.spread.product", "ask_price.bid_price.spread", "reference_price.wap.spread"]:
-        for window in [1, 2, 3, 5, 10]:
+    for col in ["ask_price", "bid_price", "ask_size", "bid_size", "ask_price.bid_price.spread", "reference_price.wap.spread"]:
+        for window in [1, 3, 5, 10]:
             df[f"{col}.diff.{window}"] = rolling_sample[col].diff(window)
 
     df["imbalance_size.diff.matched_size.ratio"] = rolling_sample["imbalance_size"].diff() / df["matched_size"]
-    #df[f"wap.pct_change.1"] = rolling_sample["wap"].pct_change(1)
 
     return df
 
@@ -435,6 +502,14 @@ def generate_global_features(df: pd.DataFrame) -> None:
         "price.median": df.groupby("stock_id")["bid_price"].median() + df.groupby("stock_id")["ask_price"].median(),
         "price.std": df.groupby("stock_id")["bid_price"].std(engine=apply_engine) + df.groupby("stock_id")["ask_price"].std(engine=apply_engine),
         "price.ptp": df.groupby("stock_id")["bid_price"].max(engine=apply_engine) - df.groupby("stock_id")["ask_price"].min(engine=apply_engine),
+        #"wap.median": df.groupby("stock_id")["wap"].median(),
+        #"wap.std": df.groupby("stock_id")["wap"].std(engine=apply_engine),
+        #"reference_price.median": df.groupby("stock_id")["reference_price"].median(),
+        #"reference_price.std": df.groupby("stock_id")["reference_price"].std(engine=apply_engine),
+        #"matched_size.median": df.groupby("stock_id")["matched_size"].median(),
+        #"matched_size.std": df.groupby("stock_id")["matched_size"].std(engine=apply_engine),
+        #"imbalance_size.median": df.groupby("stock_id")["imbalance_size"].median(),
+        #"imbalance_size.std": df.groupby("stock_id")["imbalance_size"].std(engine=apply_engine),
     }
 
     return global_stock_id_feats
