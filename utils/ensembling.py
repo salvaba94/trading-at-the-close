@@ -43,7 +43,7 @@ def cubic_mean(array_results):
 def pow_mean(array_results, order=0):
     array_results = array_results.copy()
     columns = [i for i in range(len(array_results))]
-    df_results=pd.DataFrame(np.vstack(array_results).T)
+    df_results = pd.DataFrame(np.vstack(array_results).T)
 
     df_results.columns = columns.copy()
     pow_cols = []
