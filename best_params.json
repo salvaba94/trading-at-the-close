@@ -1,1 +1,0 @@
-{"max_depth": 11, "num_leaves": 549, "device": "cpu", "verbose": -1, "n_jobs": 1, "objective": "mae", "n_estimators": 750, "boosting_type": "gbdt", "subsample": 0.5958952693003629, "min_child_samples": 32, "colsample_bytree": 0.4754840392673484, "reg_alpha": 0.04346660307856414, "reg_lambda": 0.016866656426520493, "learning_rate": 0.0163498470535577}
